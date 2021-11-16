@@ -1,21 +1,21 @@
 [package]
-name = "fiber_transport_client"
+name = "clibri_transport_client"
 version = "0.0.1"
 authors = ["DmitryAstafyev <D.Astafyev@outlook.com>"]
 edition = "2018"
-description = "Based on websocket protocol client. Used for fiber project"
-repository = "https://github.com/DmitryAstafyev/fiber.transport.rust.client"
+description = "Based on websocket protocol client. Used for clibri project"
+repository = "https://github.com/DmitryAstafyev/clibri.transport.rust.client"
 license = "Apache-2.0"
 license-file = "LICENSE"
-homepage = "https://github.com/DmitryAstafyev/fiber"
+homepage = "https://github.com/DmitryAstafyev/clibri"
 readme = "README.md"
-keywords = ["websocket", "fiber", "protocol"]
+keywords = ["websocket", "clibri", "protocol"]
 categories = ["network-programming"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-fiber = { path = "../../../../lib/rust" }
+clibri = { path = "../../../../lib/rust" }
 tokio = { version = "1.9.0", features = ["full"] }
 tokio-tungstenite = "0.15.0"
 futures = { version = "0.3.16" }

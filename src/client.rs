@@ -3,7 +3,7 @@ use super::{
     options::{ConnectionType, Options},
 };
 use async_trait::async_trait;
-use fiber::{
+use clibri::{
     client,
     client::{Control as ClientControl, Event, Impl, Message},
     env,
