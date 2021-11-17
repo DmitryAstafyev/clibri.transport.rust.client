@@ -91,6 +91,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "clibri"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "futures",
+ "log",
+ "log4rs",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "clibri_transport_client"
+version = "0.0.1"
+dependencies = [
+ "async-trait",
+ "clibri",
+ "futures",
+ "hyper",
+ "log",
+ "log4rs",
+ "thiserror",
+ "tokio",
+ "tokio-tungstenite",
+ "tokio-util",
+ "uuid",
+]
+
+[[package]]
 name = "cpufeatures"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -124,35 +153,6 @@ name = "dtoa"
 version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56899898ce76aaf4a0f24d914c97ea6ed976d42fec6ad33fcbb0a1103e07b2b0"
-
-[[package]]
-name = "clibri"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "futures",
- "log",
- "log4rs",
- "tokio",
- "uuid",
-]
-
-[[package]]
-name = "clibri_transport_client"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "clibri",
- "futures",
- "hyper",
- "log",
- "log4rs",
- "thiserror",
- "tokio",
- "tokio-tungstenite",
- "tokio-util",
- "uuid",
-]
 
 [[package]]
 name = "fnv"
