@@ -94,9 +94,9 @@ dependencies = [
 
 [[package]]
 name = "clibri"
-version = "0.1.2"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "50b63a86cb9cbf3ad213bfd2ff3e25dcecf02a6bb08ac94751b563fd339d4401"
+checksum = "3ccd6ae369e37fd07c688fc0bdfb6d3c82580c5413684f0b28c562abcb4dd721"
 dependencies = [
  "async-trait",
  "futures",
@@ -108,7 +108,7 @@ dependencies = [
 
 [[package]]
 name = "clibri_transport_client"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "async-trait",
  "clibri",

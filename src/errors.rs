@@ -3,8 +3,10 @@ use thiserror::Error as ThisError;
 
 #[derive(ThisError, Debug, Clone)]
 pub enum Error {
-    #[error("connecting error error: `{0}`")]
+    #[error("connecting error: `{0}`")]
     Connecting(String),
+    #[error("closing error: `{0}`")]
+    Closing(String),
     #[error("fail to make http request: `{0}`")]
     HttpRequest(String),
     #[error("fail to get connection port from distributor")]
@@ -25,8 +27,8 @@ pub enum Error {
     SocketAddr(String),
     #[error("events ovserver already taken")]
     ObserverAlreadyTaken,
-    #[error("messages ovserver already taken")]
-    SenderAlreadyTaken,
+    #[error("client is already inited")]
+    AlreadyInited,
 }
 
 impl client::Error for Error {}
