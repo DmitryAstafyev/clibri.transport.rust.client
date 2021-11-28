@@ -5,7 +5,7 @@ use super::{
 use async_trait::async_trait;
 use clibri::{
     client,
-    client::{Control as ClientControl, Event, Impl, Message},
+    client::{Event, Impl, Message},
     env,
     env::logs,
 };
