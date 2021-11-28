@@ -1,6 +1,6 @@
 [package]
 name = "clibri_transport_client"
-version = "0.1.4"
+version = "0.1.5"
 authors = ["DmitryAstafyev <D.Astafyev@outlook.com>"]
 edition = "2018"
 description = "Based on websocket protocol client. Used for clibri project"

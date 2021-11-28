@@ -403,7 +403,7 @@ impl Impl<Error, Control> for Client {
         if let Err(err) = self.tx_events.send(Event::Disconnected).await {
             warn!(
                 target: logs::targets::CLIENT,
-                "fail to send event Disconnected; error: {:?}", err
+                "cannot send event Disconnected; looks like consumer doesn't listen this channel anymore: {}", err
             );
         }
         let close_err = match writer.reunite(reader) {
