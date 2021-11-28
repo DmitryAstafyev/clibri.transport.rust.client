@@ -401,7 +401,7 @@ impl Impl<Error, Control> for Client {
             }
         );
         if let Err(err) = self.tx_events.send(Event::Disconnected).await {
-            error!(
+            warn!(
                 target: logs::targets::CLIENT,
                 "fail to send event Disconnected; error: {:?}", err
             );
@@ -413,9 +413,7 @@ impl Impl<Error, Control> for Client {
                 .map_err(|e| Error::Closing(e.to_string())),
             Err(err) => Err(Error::Closing(err.to_string())),
         };
-        self.control.shutdown().await?;
         self.reinit();
-        self.control.get_shutdown_token().cancel();
         if let Some(tx_shutdown_response) = tx_shutdown_response {
             if tx_shutdown_response.send(()).is_err() {
                 error!(
