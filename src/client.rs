@@ -37,6 +37,22 @@ mod channels {
     pub const SHUTDOWN: usize = 1;
 }
 
+mod shortcuts {
+    use super::*;
+    pub async fn send_event(tx_events: &Sender<Event<Error>>, event: Event<Error>) -> bool {
+        let event_display = format!("{}", event);
+        if let Err(err) = tx_events.send(event).await {
+            warn!(
+                target: logs::targets::CLIENT,
+                "fail to send event {}: {:?}", event_display, err
+            );
+            false
+        } else {
+            true
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Control {
     shutdown: CancellationToken,
@@ -117,13 +133,11 @@ impl Client {
         let addr_str = format!("ws://{}:{}", addr.ip(), addr.port());
         match connect_async(&addr_str).await {
             Ok((ws, _)) => {
-                if let Err(err) = tx_events.send(Event::Connected(addr)).await {
-                    error!(
-                        target: logs::targets::CLIENT,
-                        "fail to emit Event::Connected: {:?}", err
-                    );
+                if !shortcuts::send_event(&tx_events, Event::Connected(addr)).await {
+                    Err(Error::NoMaster)
+                } else {
+                    Ok(ws)
                 }
-                Ok(ws)
             }
             Err(err) => Err(Error::Connecting(format!(
                 "Fail to connect to {}; error: {}",
@@ -175,13 +189,11 @@ impl Client {
                 let addr = format!("{}:{}", addr.ip(), port)
                     .parse::<SocketAddr>()
                     .map_err(|e| Error::SocketAddr(e.to_string()))?;
-                if let Err(err) = tx_events.send(Event::Connected(addr)).await {
-                    error!(
-                        target: logs::targets::CLIENT,
-                        "fail to emit Event::Connected: {:?}", err
-                    );
+                if !shortcuts::send_event(&tx_events, Event::Connected(addr)).await {
+                    Err(Error::NoMaster)
+                } else {
+                    Ok(ws)
                 }
-                Ok(ws)
             }
             Err(err) => Err(Error::Connecting(format!(
                 "Fail to connect to {}; error: {}",
@@ -250,12 +262,7 @@ impl Client {
             _ = cancel.cancelled() => None
         };
         if let Some(err) = error.clone() {
-            if let Err(err) = tx_events.send(Event::Error(err)).await {
-                error!(
-                    target: logs::targets::CLIENT,
-                    "fail to send event Error; error: {:?}", err
-                );
-            }
+            shortcuts::send_event(&tx_events, Event::Error(err)).await;
         }
         debug!(target: logs::targets::CLIENT, "reader_task is finished");
         cancel.cancel();
@@ -304,12 +311,7 @@ impl Client {
             _ = cancel.cancelled() => None
         };
         if let Some(err) = error.clone() {
-            if let Err(err) = tx_events.send(Event::Error(err)).await {
-                error!(
-                    target: logs::targets::CLIENT,
-                    "fail to send event Error; error: {:?}", err
-                );
-            }
+            shortcuts::send_event(&tx_events, Event::Error(err)).await;
         }
         cancel.cancel();
         (writer, error)
@@ -358,12 +360,7 @@ impl Impl<Error, Control> for Client {
                     target: logs::targets::CLIENT,
                     "client is finished with error: {}", err
                 );
-                if let Err(err) = self.tx_events.send(Event::Error(err.clone())).await {
-                    error!(
-                        target: logs::targets::CLIENT,
-                        "fail to send event Error; error: {:?}", err
-                    );
-                }
+                shortcuts::send_event(&self.tx_events, Event::Error(err.clone())).await;
                 return Err(err);
             }
         };
@@ -400,18 +397,19 @@ impl Impl<Error, Control> for Client {
                 }
             }
         );
-        if let Err(err) = self.tx_events.send(Event::Disconnected).await {
-            warn!(
-                target: logs::targets::CLIENT,
-                "cannot send event Disconnected; looks like consumer doesn't listen this channel anymore: {}", err
-            );
-        }
+        shortcuts::send_event(&self.tx_events, Event::Disconnected).await;
         let close_err = match writer.reunite(reader) {
             Ok(mut ws) => ws
                 .close(None)
                 .await
                 .map_err(|e| Error::Closing(e.to_string())),
-            Err(err) => Err(Error::Closing(err.to_string())),
+            Err(err) => {
+                error!(
+                    target: logs::targets::CLIENT,
+                    "fail to close websocket; error: {}", err
+                );
+                Err(Error::Closing(err.to_string()))
+            }
         };
         self.reinit();
         if let Some(tx_shutdown_response) = tx_shutdown_response {

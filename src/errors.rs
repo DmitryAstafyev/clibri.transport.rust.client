@@ -29,6 +29,8 @@ pub enum Error {
     ObserverAlreadyTaken,
     #[error("client is already inited")]
     AlreadyInited,
+    #[error("nobody listens client events")]
+    NoMaster,
 }
 
 impl client::Error for Error {}
