@@ -21,7 +21,7 @@ use tokio::{
     net::TcpStream,
     select,
     sync::{
-        mpsc::{channel, Receiver, Sender},
+        mpsc::{channel, unbounded_channel, Receiver, Sender, UnboundedReceiver, UnboundedSender},
         oneshot,
     },
 };
@@ -32,16 +32,17 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 mod channels {
-    pub const EVENTS: usize = 100;
-    pub const MESSAGES: usize = 100;
     pub const SHUTDOWN: usize = 1;
 }
 
 mod shortcuts {
     use super::*;
-    pub async fn send_event(tx_events: &Sender<Event<Error>>, event: Event<Error>) -> bool {
+    pub async fn send_event(
+        tx_events: &UnboundedSender<Event<Error>>,
+        event: Event<Error>,
+    ) -> bool {
         let event_display = format!("{}", event);
-        if let Err(err) = tx_events.send(event).await {
+        if let Err(err) = tx_events.send(event) {
             warn!(
                 target: logs::targets::CLIENT,
                 "fail to send event {}: {:?}", event_display, err
@@ -56,7 +57,7 @@ mod shortcuts {
 #[derive(Debug, Clone)]
 pub struct Control {
     shutdown: CancellationToken,
-    tx_sender: Sender<Message>,
+    tx_sender: UnboundedSender<Message>,
     tx_shutdown: Sender<oneshot::Sender<()>>,
 }
 
@@ -82,7 +83,6 @@ impl client::Control<Error> for Control {
     async fn send(&self, msg: Message) -> Result<(), Error> {
         self.tx_sender
             .send(msg)
-            .await
             .map_err(|e| Error::Channel(e.to_string()))
     }
 }
@@ -91,22 +91,24 @@ pub struct Client {
     options: Options,
     uuid: Uuid,
     control: Control,
-    rx_sender: Option<Receiver<Message>>,
+    rx_sender: Option<UnboundedReceiver<Message>>,
     rx_shutdown: Option<Receiver<oneshot::Sender<()>>>,
-    rx_events: Option<Receiver<Event<Error>>>,
-    tx_events: Sender<Event<Error>>,
+    rx_events: Option<UnboundedReceiver<Event<Error>>>,
+    tx_events: UnboundedSender<Event<Error>>,
 }
 
 impl Client {
     pub fn new(options: Options) -> Self {
-        let (tx_sender, rx_sender): (Sender<Message>, Receiver<Message>) =
-            channel(channels::MESSAGES);
+        let (tx_sender, rx_sender): (UnboundedSender<Message>, UnboundedReceiver<Message>) =
+            unbounded_channel();
         let (tx_shutdown, rx_shutdown): (
             Sender<oneshot::Sender<()>>,
             Receiver<oneshot::Sender<()>>,
         ) = channel(channels::SHUTDOWN);
-        let (tx_events, rx_events): (Sender<Event<Error>>, Receiver<Event<Error>>) =
-            channel(channels::EVENTS);
+        let (tx_events, rx_events): (
+            UnboundedSender<Event<Error>>,
+            UnboundedReceiver<Event<Error>>,
+        ) = unbounded_channel();
         Self {
             options,
             tx_events,
@@ -128,7 +130,7 @@ impl Client {
 
     async fn direct_connection(
         addr: SocketAddr,
-        tx_events: Sender<Event<Error>>,
+        tx_events: UnboundedSender<Event<Error>>,
     ) -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>, Error> {
         let addr_str = format!("ws://{}:{}", addr.ip(), addr.port());
         match connect_async(&addr_str).await {
@@ -148,7 +150,7 @@ impl Client {
 
     async fn distributor_connection(
         addr: SocketAddr,
-        tx_events: Sender<Event<Error>>,
+        tx_events: UnboundedSender<Event<Error>>,
     ) -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>, Error> {
         let distributor_url = format!("http://{}:{}", addr.ip(), addr.port())
             .parse::<Uri>()
@@ -204,7 +206,7 @@ impl Client {
 
     async fn reader_task(
         mut reader: SplitStream<WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>>,
-        tx_events: Sender<Event<Error>>,
+        tx_events: UnboundedSender<Event<Error>>,
         cancel: CancellationToken,
     ) -> (
         SplitStream<WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>>,
@@ -218,19 +220,15 @@ impl Client {
                         Ok(msg) => match msg {
                             WsMessage::Binary(buffer) => tx_events
                                 .send(Event::Message(Message::Binary(buffer)))
-                                .await
                                 .map_err(|e| Error::Channel(e.to_string()))?,
                             WsMessage::Text(txt) => tx_events
                                 .send(Event::Message(Message::Text(txt)))
-                                .await
                                 .map_err(|e| Error::Channel(e.to_string()))?,
                             WsMessage::Ping(buffer) => tx_events
                                 .send(Event::Message(Message::Ping(buffer)))
-                                .await
                                 .map_err(|e| Error::Channel(e.to_string()))?,
                             WsMessage::Pong(buffer) => tx_events
                                 .send(Event::Message(Message::Pong(buffer)))
-                                .await
                                 .map_err(|e| Error::Channel(e.to_string()))?,
                             WsMessage::Close(frame) => {
                                 if let Some(frame) = frame {
@@ -271,8 +269,8 @@ impl Client {
 
     async fn writer_task(
         mut writer: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, WsMessage>,
-        tx_events: Sender<Event<Error>>,
-        mut rx_sender: Receiver<Message>,
+        tx_events: UnboundedSender<Event<Error>>,
+        mut rx_sender: UnboundedReceiver<Message>,
         cancel: CancellationToken,
     ) -> (
         SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, WsMessage>,
@@ -318,14 +316,16 @@ impl Client {
     }
 
     fn reinit(&mut self) {
-        let (tx_sender, rx_sender): (Sender<Message>, Receiver<Message>) =
-            channel(channels::MESSAGES);
+        let (tx_sender, rx_sender): (UnboundedSender<Message>, UnboundedReceiver<Message>) =
+            unbounded_channel();
         let (tx_shutdown, rx_shutdown): (
             Sender<oneshot::Sender<()>>,
             Receiver<oneshot::Sender<()>>,
         ) = channel(channels::SHUTDOWN);
-        let (tx_events, rx_events): (Sender<Event<Error>>, Receiver<Event<Error>>) =
-            channel(channels::EVENTS);
+        let (tx_events, rx_events): (
+            UnboundedSender<Event<Error>>,
+            UnboundedReceiver<Event<Error>>,
+        ) = unbounded_channel();
         self.tx_events = tx_events;
         self.rx_events = Some(rx_events);
         self.rx_sender = Some(rx_sender);
@@ -430,7 +430,7 @@ impl Impl<Error, Control> for Client {
         }
     }
 
-    fn observer(&mut self) -> Result<Receiver<Event<Error>>, Error> {
+    fn observer(&mut self) -> Result<UnboundedReceiver<Event<Error>>, Error> {
         if let Some(rx_events) = self.rx_events.take() {
             Ok(rx_events)
         } else {
