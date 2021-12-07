@@ -26,7 +26,8 @@ use tokio::{
     },
 };
 use tokio_tungstenite::{
-    connect_async, tungstenite::Message as WsMessage, MaybeTlsStream, WebSocketStream,
+    connect_async, tungstenite::error::Error as WsError, tungstenite::Message as WsMessage,
+    MaybeTlsStream, WebSocketStream,
 };
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -399,10 +400,16 @@ impl Impl<Error, Control> for Client {
         );
         shortcuts::send_event(&self.tx_events, Event::Disconnected).await;
         let close_err = match writer.reunite(reader) {
-            Ok(mut ws) => ws
-                .close(None)
-                .await
-                .map_err(|e| Error::Closing(e.to_string())),
+            Ok(mut ws) => match ws.close(None).await {
+                Ok(_) => Ok(()),
+                Err(err) => {
+                    if let WsError::AlreadyClosed = err {
+                        Ok(())
+                    } else {
+                        Err(Error::Closing(err.to_string()))
+                    }
+                }
+            },
             Err(err) => {
                 error!(
                     target: logs::targets::CLIENT,

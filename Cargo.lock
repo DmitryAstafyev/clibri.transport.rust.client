@@ -108,7 +108,7 @@ dependencies = [
 
 [[package]]
 name = "clibri_transport_client"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "async-trait",
  "clibri",
