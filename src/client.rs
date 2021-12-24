@@ -1,6 +1,6 @@
 use super::{
     errors::Error,
-    options::{ConnectionType, Options},
+    options::{ConnectionType, Distributor, Options},
 };
 use async_trait::async_trait;
 use clibri::{
@@ -24,6 +24,7 @@ use tokio::{
         mpsc::{channel, unbounded_channel, Receiver, Sender, UnboundedReceiver, UnboundedSender},
         oneshot,
     },
+    time::{sleep, Duration},
 };
 use tokio_tungstenite::{
     connect_async, tungstenite::error::Error as WsError, tungstenite::Message as WsMessage,
@@ -150,29 +151,50 @@ impl Client {
     }
 
     async fn distributor_connection(
-        addr: SocketAddr,
+        configuration: Distributor,
         tx_events: UnboundedSender<Event<Error>>,
     ) -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>, Error> {
-        let distributor_url = format!("http://{}:{}", addr.ip(), addr.port())
-            .parse::<Uri>()
-            .map_err(|e| Error::DistributorUrl(e.to_string()))?;
+        let distributor_url = format!(
+            "http://{}:{}",
+            configuration.addr.ip(),
+            configuration.addr.port()
+        )
+        .parse::<Uri>()
+        .map_err(|e| Error::DistributorUrl(e.to_string()))?;
         debug!(
             target: logs::targets::CLIENT,
             "requesting port for websocket connection from {}", distributor_url
         );
         let http_client = HttpClient::new();
-        let response = http_client
-            .get(distributor_url)
-            .await
-            .map_err(|e| Error::HttpRequest(e.to_string()))?;
-        if response.status() != StatusCode::OK {
-            error!(
-                target: logs::targets::CLIENT,
-                "has been gotten status: {}",
-                response.status()
-            );
-            return Err(Error::DistributorFail);
-        }
+        let mut attempt = 0;
+        let response = loop {
+            let response = match http_client.get(distributor_url.clone()).await {
+                Ok(response) => Some(response),
+                Err(err) => {
+                    if attempt < configuration.attempts {
+                        None
+                    } else {
+                        return Err(Error::HttpRequest(err.to_string()));
+                    }
+                }
+            };
+            if let Some(response) = response {
+                if response.status() != StatusCode::OK {
+                    if attempt > configuration.attempts {
+                        error!(
+                            target: logs::targets::CLIENT,
+                            "has been gotten status: {}",
+                            response.status()
+                        );
+                        return Err(Error::DistributorFail);
+                    }
+                } else {
+                    break response;
+                }
+            }
+            attempt += 1;
+            sleep(Duration::from_millis(configuration.delay_between_attempts)).await;
+        };
         let buffer = hyper::body::to_bytes(response)
             .await
             .map_err(|e| Error::DistributorResponse(e.to_string()))?;
@@ -182,14 +204,14 @@ impl Client {
         )
         .parse()
         .map_err(|_| Error::DistributorInvalidResponse)?;
-        let addr_str = format!("ws://{}:{}", addr.ip(), port);
+        let addr_str = format!("ws://{}:{}", configuration.addr.ip(), port);
         debug!(
             target: logs::targets::CLIENT,
             "will try to connect to: {}", addr_str
         );
         match connect_async(&addr_str).await {
             Ok((ws, _)) => {
-                let addr = format!("{}:{}", addr.ip(), port)
+                let addr = format!("{}:{}", configuration.addr.ip(), port)
                     .parse::<SocketAddr>()
                     .map_err(|e| Error::SocketAddr(e.to_string()))?;
                 if !shortcuts::send_event(&tx_events, Event::Connected(addr)).await {
@@ -345,12 +367,12 @@ impl Impl<Error, Control> for Client {
     async fn connect(&mut self) -> Result<(), Error> {
         env::logs::init();
         debug!(target: logs::targets::CLIENT, "client is started");
-        let socket = match self.options.connection {
+        let socket = match &self.options.connection {
             ConnectionType::Direct(addr) => {
-                Self::direct_connection(addr, self.tx_events.clone()).await
+                Self::direct_connection(*addr, self.tx_events.clone()).await
             }
-            ConnectionType::Distributor(addr) => {
-                Self::distributor_connection(addr, self.tx_events.clone()).await
+            ConnectionType::Distributor(configuration) => {
+                Self::distributor_connection(configuration.clone(), self.tx_events.clone()).await
             }
         };
         let socket = match socket {
